@@ -10,8 +10,9 @@ Problem:
 		Information like - 
 					Name, Father's Name, Date of Birth, PAN
 *****************************************************
-
-
+```bash
+uvicorn api.server:app
+```
 
 *****************************************************
 Solution:
