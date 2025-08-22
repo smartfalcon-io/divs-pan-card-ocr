@@ -1,7 +1,11 @@
-FROM continuumio/anaconda
-RUN conda install opencv
-RUN pip install pytesseract
-RUN apt-get -y install tesseract-ocr
-ADD * /
-# docker build -t shantanuo/mypancard .
-# docker run -i --rm  -v "$(pwd)":/home/  /home/tpan.py /home/PANOcr.jpg
+FROM python:3.10-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+CMD ["uvicorn", "api.server:app", "--host", "0.0.0.0", "--port", "8000"]
