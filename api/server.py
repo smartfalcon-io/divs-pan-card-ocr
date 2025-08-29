@@ -12,7 +12,7 @@ app = FastAPI()
 async def upload_pan(
     file: UploadFile = File(...),
     name: str = Form(...),
-    father: str = Form(...),
+    # father: str = Form(...),
     dob: str = Form(...)
 ):
     try:
@@ -32,7 +32,7 @@ async def upload_pan(
         raise HTTPException(status_code=500, detail=f"OCR extraction failed: {str(e)}")
 
     finally:
-        # Ensure temp file is removed
+        # Ensure temp file is removhttp://localhost:8085/api/ws-logs?req_id=92735b39-8a9b-4dfa-8d77-2c9fd0b76460ed
         if os.path.exists(temp_path):
             os.remove(temp_path)
 
@@ -42,7 +42,7 @@ async def upload_pan(
 
     verification = {
         "Name": normalize(extracted.get("Name")) == normalize(name),
-        "Father Name": normalize(extracted.get("Father Name")) == normalize(father),
+        # "Father Name": normalize(extracted.get("Father Name")) == normalize(father),
         "Date of Birth": normalize(extracted.get("Date of Birth")) == normalize(dob),
     }
 
