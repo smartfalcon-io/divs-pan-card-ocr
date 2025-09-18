@@ -4,7 +4,7 @@ metadata:
   name: pan-ocr
   namespace: dev-divs
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: pan-ocr
@@ -17,25 +17,52 @@ spec:
         - name: ecr-registry-secret
       containers:
         - name: pancard-ocr
-          image: 427157662616.dkr.ecr.ap-south-1.amazonaws.com/pancard-ocr:latest
+          image: 427157662616.dkr.ecr.ap-south-1.amazonaws.com/pancard-ocr-svc:v1.1.1
+          workingDir: /app       # set working directory
           ports:
             - containerPort: 8000
           command: ["uvicorn"]
           args: ["api.server:app", "--host", "0.0.0.0", "--port", "8000"]
-          env:
-            - name: KAFKA_BROKER
-              value: "vectordb-kafka-headless.divs:9093"
-            - name: KAFKA_TOPIC_IN
-              value: "divs_pan"
-            - name: KAFKA_TOPIC_OUT
-              value: "divs_verifier"
-            - name: AWS_ACCESS_KEY_ID
-              valueFrom:
-                secretKeyRef:
-                  name: aws-credentials
-                  key: access-key-id
-            - name: AWS_SECRET_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: aws-credentials
-                  key: secret-access-key
+          volumeMounts:
+            - name: pan-ocr-config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+      volumes:
+        - name: pan-ocr-config
+          configMap:
+            name: pan-ocr-config
+            items:
+              - key: config.yaml
+                path: config.yaml
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pan-ocr-config
+  namespace: dev-divs
+data:
+  config.yaml: |
+    kafka:
+      brokers: vectordb-kafka-headless.dev-divs:9093
+      consumer_group: "divs-pan-ocr-validation"
+      topic_in: "divs_pan"
+      topic_out: "divs_verifier"
+    aws:
+      bucket_name: speedpay.india
+      prefix: divs/images
+    ocr:
+      model_path: /models/pan-ocr
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pan-ocr-svc
+  namespace: dev-divs
+spec:
+  selector:
+    app: pan-ocr
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
+  type: ClusterIP

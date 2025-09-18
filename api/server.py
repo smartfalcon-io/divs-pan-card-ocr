@@ -1,52 +1,48 @@
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 import shutil, os, tempfile, logging
-from services.pan_service import extract_pan_details
+from services.pan_service import extract_and_verify  # Returns OCR text
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Logging configuration
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
+def normalize(text: str) -> str:
+    return (text or "").strip().upper()
+
+
+
 @app.post("/upload")
 async def upload_pan(
-    file: UploadFile = File(...),
-    name: str = Form(...),
-    father: str = Form(...),
-    dob: str = Form(...)
+    identity_proof_front_image: UploadFile = File(...),
+    first_name: str = Form(None),
+    dob: str = Form(None),
+    gender: str = Form(None),
 ):
+    temp_path = None
     try:
-        # Save uploaded file to a secure temp path
-        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as tmp:
-            shutil.copyfileobj(file.file, tmp)
+        logger.info(f"Received upload request: file={identity_proof_front_image.filename}, first_name={first_name}, dob={dob}, gender={gender}")
+
+        # Save file temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(identity_proof_front_image.filename)[1]) as tmp:
+            shutil.copyfileobj(identity_proof_front_image.file, tmp)
             temp_path = tmp.name
+        logger.info(f"Saved temporary file at {temp_path}")
 
-        logger.info(f"Saved uploaded file to {temp_path}")
-
-        # Extract PAN details
-        extracted = extract_pan_details(temp_path) or {}
-        logger.info(f"Extracted Data: {extracted}")
+        # Call pan_service
+        result = extract_and_verify(temp_path, expected_name=first_name, expected_dob=dob)
 
     except Exception as e:
-        logger.error(f"OCR extraction failed: {e}")
+        logger.error(f"OCR extraction failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"OCR extraction failed: {str(e)}")
 
     finally:
-        # Ensure temp file is removed
-        if os.path.exists(temp_path):
+        if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
+            logger.info(f"Temporary file removed: {temp_path}")
 
-    # Verification with normalization
-    def normalize(s: str) -> str:
-        return (s or "").strip().upper()
-
-    verification = {
-        "Name": normalize(extracted.get("Name")) == normalize(name),
-        "Father Name": normalize(extracted.get("Father Name")) == normalize(father),
-        "Date of Birth": normalize(extracted.get("Date of Birth")) == normalize(dob),
-    }
-
-    return {
-        "Extracted Data": extracted,
-        "Verification Result": verification
-    }
+    return result

@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pan-ocr-config
+  namespace: dev-divs
+data:
+  config.yaml: |
+    kafka:
+      brokers: vectordb-kafka-headless.dev-divs:9093
+      consumer_group: "divs-pan-ocr-validation"
+      topic_in: "divs_pan"
+      topic_out: "divs_verifier"
+    aws:
+      bucket_name: speedpay.india
+      prefix: divs/images
+    ocr:
+      model_path: /models/pan-ocr
