@@ -1,112 +1,104 @@
 import re
 from PIL import Image, ImageEnhance, ImageFilter
-import cv2
 import pytesseract
-import logging
 
-# Logging configuration
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
-)
-logger = logging.getLogger(__name__)
-
-# Set tesseract command path
-pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
-
-# -------------------- NORMALIZATION --------------------
-def normalize_text(text: str) -> str:
-    text = text.upper()  # uppercase
-    text = re.sub(r'\s+', ' ', text)  # replace multiple spaces/newlines with single space
-    text = re.sub(r'[^A-Z0-9\s:/-]', '', text)  # keep valid chars only
+# -------------------- TEXT CLEANING --------------------
+def clean_text(text):
+    text = text.upper()
+    text = re.sub(r'[^A-Z0-9\s:/-]', '', text)  # Keep valid chars only
     return text.strip()
-
-def normalize(text: str) -> str:
-    if not text:
-        return ""
-    text = text.strip().upper()
-    # Replace common separators with a standard one
-    text = text.replace("/", "-")
-    return text
 
 # -------------------- IMAGE PREPROCESSING --------------------
 def preprocess_image(img_path):
-    logger.info(f"Preprocessing image: {img_path}")
-    img = Image.open(img_path).convert("L")  # grayscale
+    img = Image.open(img_path).convert("L")  # Grayscale
     enhancer = ImageEnhance.Contrast(img)
-    img = enhancer.enhance(2)  # increase contrast
-    img = img.filter(ImageFilter.SHARPEN)  # sharpen
-    logger.info("Image preprocessing completed")
+    img = enhancer.enhance(2)  # Increase contrast
+    img = img.filter(ImageFilter.SHARPEN)  # Sharpen image
     return img
 
+# -------------------- NORMALIZE DOB LINE --------------------
+def normalize_date_line(line):
+    # Replace common OCR misreads
+    line = line.replace("I", "/").replace("|", "/").replace(".", "/")
+    line = re.sub(r"\s+", "", line)  # remove all spaces
+    return line
 
+# -------------------- PAN EXTRACTION --------------------
+def extract_pan_details(file_path: str):
+    img = preprocess_image(file_path)
+    text = pytesseract.image_to_string(img, lang="eng")
 
+    lines = [clean_text(line) for line in text.split("\n") if line.strip()]
+    pan, dob, name = None, None, None
 
-def extract_and_verify(image_path, expected_name=None, expected_dob=None):
-    """
-    Extract PAN card details from image and verify against given values.
-    Returns OCR text, extracted PAN number, DOB, and verification results.
-    """
+    # --- PAN regex ---
+    pan_pattern = re.compile(r"[A-Z]{5}[0-9]{4}[A-Z]{1}")
+    for line in lines:
+        candidate = line.replace(" ", "")
+        match = pan_pattern.search(candidate)
+        if match:
+            pan = match.group()
+            break
 
-    logger.info(f"Starting PAN OCR extraction for file: {image_path}")
+    # --- DOB regex ---
+    dob_pattern = re.compile(r"(\d{2}[-/\\\s]?\d{2}[-/\\\s]?\d{4})")
 
-    # Step 1: Read image
-    img = cv2.imread(image_path)
-    if img is None:
-        raise ValueError("Invalid image path or file could not be opened.")
+    # First, try to find line containing DOB keyword
+    for idx, line in enumerate(lines):
+        if "DOB" in line or "DATE OF BIRTH" in line:
+            possible_line = lines[idx + 1] if idx + 1 < len(lines) else line
+            normalized_line = normalize_date_line(possible_line)
+            match = dob_pattern.search(normalized_line)
+            if match:
+                date_str = match.group()
+                # Convert to dd/mm/yyyy format
+                date_str = re.sub(r"[-\\./\s]", "/", date_str)
+                parts = re.split(r"/", date_str)
+                if len(parts) == 3:
+                    day, month, year = parts
+                    # Zero-pad day and month if needed
+                    day = day.zfill(2)
+                    month = month.zfill(2)
+                    dob = f"{day}/{month}/{year}"
+                else:
+                    dob = date_str  # fallback
+                break
 
-    # Step 2: Preprocessing
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
-    blur = cv2.medianBlur(thresh, 3)
+    # Fallback: scan all lines if not found
+    if not dob:
+        for line in lines:
+            normalized_line = normalize_date_line(line)
+            match = dob_pattern.search(normalized_line)
+            if match:
+                date_str = match.group()
+                date_str = re.sub(r"[-\\./\s]", "/", date_str)
+                parts = re.split(r"/", date_str)
+                if len(parts) == 3:
+                    day, month, year = parts
+                    day = day.zfill(2)
+                    month = month.zfill(2)
+                    dob = f"{day}/{month}/{year}"
+                else:
+                    dob = date_str
+                break
+                
+    # --- Name extraction (handle diff formats) ---
+    for idx, line in enumerate(lines):
+        # If line has "NAME" but not "FATHER" → take next line
+        if "NAME" in line and "FATHER" not in line:
+            if idx + 1 < len(lines):
+                name = lines[idx + 1].title()
+                break
+        # Fallback: Sometimes Name is just above DOB
+        if dob and idx + 1 < len(lines) and dob in line:
+            possible_name = lines[idx - 1].title() if idx > 0 else None
+            if possible_name and len(possible_name.split()) >= 2:
+                name = possible_name
+                break
 
-    # Step 3: OCR
-    extracted_text = pytesseract.image_to_string(blur)
-    logger.info(f"OCR extraction completed. Raw text:\n{extracted_text}")
-
-    # Step 4: Pattern matching
-    pan_pattern = r"[A-Z]{5}[0-9]{4}[A-Z]"
-    dob_pattern = r"\d{2}/\d{2}/\d{4}"
-
-    pan_match = re.search(pan_pattern, extracted_text)
-    dob_match = re.search(dob_pattern, extracted_text)
-
-    pan_number = pan_match.group(0) if pan_match else None
-    dob_extracted = dob_match.group(0) if dob_match else None
-
-    # Step 5: Verification logic
-    verification = {}
-    contains = True
-    message = "PAN verification successful."
-
-    if expected_name:
-        name_check = normalize(expected_name) in normalize(extracted_text)
-        verification["Name"] = name_check
-        if not name_check:
-            contains = False
-            message = f"Name '{expected_name}' not found."
-
-    if expected_dob:
-        dob_check = normalize(expected_dob) in normalize(extracted_text)
-        verification["Date of Birth"] = dob_check
-        if not dob_check:
-            contains = False
-            message = f"DOB '{expected_dob}' not found."
-
-    verification["PAN Number Found"] = bool(pan_number)
-    if not pan_number:
-        contains = False
-        message = "PAN number not detected."
-
-    # Step 6: Return full structured response
     return {
-        "status": contains,
-        "message": message,
-        "data": {
-            "contains": contains,
-            "ocr_text": extracted_text,
-            "pan_number": pan_number,
-            "dob_extracted": dob_extracted,
-            "verification": verification
-        }
+        "Name": name,
+        "Date of Birth": dob,
+        "PAN": pan,
+        "Raw OCR Lines": lines
     }

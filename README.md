@@ -1,68 +1,25 @@
-:sparkles: This document for OCR :sparkles:
+# ✨ OCR Document Extraction — PAN Card ✨  
 
-![PAN Card to JSON](PANOcr1.jpg?raw=true "PAN Card image")
+![PAN Card to JSON](PANOcr1.jpg?raw=true "PAN Card image")  
 
-*****************************************************
-Problem:
-*****************************************************
-	Extract information from image of Personal Account Number(PAN) Card
-	by OCR in proper format[Standard according Indian Govt.].
-		Information like - 
-					Name, Father's Name, Date of Birth, PAN
-*****************************************************
+---
+
+## 🧩 Problem Statement  
+
+Extract information from an image of a **Permanent Account Number (PAN)** card using OCR in a structured format — following Indian Government standards.  
+
+### Information Extracted
+
+- Full Name  
+- Father’s Name  
+- Date of Birth  
+- PAN Number  
+
+---
+
+## 🚀 Quick Start  
+
+Run the FastAPI app using:  
+
 ```bash
 uvicorn api.server:app
-```
-
-*****************************************************
-Solution:
-*****************************************************
-	Steps:
-		-> Take image
-		-> crop to box(which has text in it)
-		-> convert into gray scale(mono crome)
-		-> give to tesseract
-		-> text(output of tesseract)
-	Now we will process this text means we will get meaningful information from it.
-		-> find name using name database
-		-> find father's name(assuming that second will be father's name)
-		-> find year of birth
-		-> find for PAN
-*****************************************************
-
-
-	
-*****************************************************
-Dependent packages
-*****************************************************
-	-python
-	-opencv
-	-numpy
-	-pytesseract
-	-JSON
-	-difflib
-	-csv
-	-PIL
-	-SciPy
-	-dataparser
-*****************************************************		
-
-
-
-*****************************************************
-Structure and Usage
-*****************************************************
-	Directories:
-		src-
-			which contains code files		
-		testcases-
-			which contains testing images
-		result
-			it contains JSON object
-			
-	Usage:
-		python file_name.py [input image]
-		Output will be JSON object name			 
-	
-*****************************************************
-:100:
