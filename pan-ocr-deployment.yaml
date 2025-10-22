@@ -1,34 +1,35 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: pan-ocr
-  namespace: dev-divs
+  name: divs-pan-ocr
+  namespace: divs-sandbox
 spec:
-  replicas: 2
+  replicas: 0
   selector:
     matchLabels:
-      app: pan-ocr
+      app: divs-pan-ocr
   template:
     metadata:
       labels:
-        app: pan-ocr
+        app: divs-pan-ocr
     spec:
       imagePullSecrets:
         - name: ecr-registry-secret
       containers:
         - name: pancard-ocr
-          image: 427157662616.dkr.ecr.ap-south-1.amazonaws.com/pancard-ocr:latest
+          image: 752749714540.dkr.ecr.ap-south-1.amazonaws.com/divs/pancard-ocr:v2.0.3
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
           command: ["uvicorn"]
           args: ["api.server:app", "--host", "0.0.0.0", "--port", "8000"]
           env:
             - name: KAFKA_BROKER
-              value: "vectordb-kafka-headless.divs:9093"
+              value: "kafka-divs-kafka-bootstrap.common.svc:9092"
             - name: KAFKA_TOPIC_IN
-              value: "divs_pan"
+              value: "divs_sandbox_pan"
             - name: KAFKA_TOPIC_OUT
-              value: "divs_verifier"
+              value: "divs_sandbox_verifier"
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:

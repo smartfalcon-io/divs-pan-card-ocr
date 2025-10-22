@@ -2,12 +2,12 @@ apiVersion: v1
 kind: Service
 metadata:
   name: pan-ocr-service
-  namespace: dev-divs
+  namespace: divs-sandbox
 spec:
   selector:
-    app: pan-ocr
+    app: divs-pan-ocr
   type: LoadBalancer
   ports:
     - protocol: TCP
       port: 80      
-      targetPort: 8087 
+      targetPort: 8000 
