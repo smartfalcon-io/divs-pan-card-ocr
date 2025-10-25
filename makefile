@@ -8,9 +8,9 @@ IMAGE_NAME = 752749714540.dkr.ecr.ap-south-1.amazonaws.com/divs/pancard-ocr
 .PHONY: run
 run: ## Run the application locally with config
 	@echo "Running application locally..."
-	@uvicorn app.main:app --host 0.0.0.0 --port 8000
+	@uvicorn api.server:app --host 0.0.0.0 --port 8000
 
-.PHONY: docker-build
+.PHONY: docker-build 
 docker-build: ## Build Docker image
 	@echo "Building Docker image $(IMAGE_NAME):$(TAG)..."
 	@docker build -f Dockerfile -t $(IMAGE_NAME):$(TAG) .
