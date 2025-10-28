@@ -390,26 +390,30 @@ import cv2
 import numpy as np
 import pytesseract
 import re
+import logging
 from PIL import Image
 from typing import Dict, Optional
 
+# -------------------- Logging Setup --------------------
+logger = logging.getLogger(__name__)
+
 # -------------------- CLEAN TEXT --------------------
 def clean_text(text: str) -> str:
-    """Cleans text for general processing, retaining some non-alphabetic chars for DOB/PAN keywords."""
     text = text.upper()
-    # Retain A-Z, 0-9, space, colon, slash, hyphen for keywords and general line cleaning
-    text = re.sub(r"[^A-Z0-9\s:/-]", "", text) 
+    text = re.sub(r"[^A-Z0-9\s:/-]", "", text)
     text = re.sub(r"\s+", " ", text)
-    return text.strip()
+    cleaned = text.strip()
+    logger.debug(f"🧹 Cleaned text: '{text}' → '{cleaned}'")
+    return cleaned
 
 # -------------------- CLEAN NAME CANDIDATE --------------------
 def clean_name_candidate(text: str) -> str:
-    """Stricter cleaning for potential name lines: letters and spaces only."""
     text = text.upper()
-    # Only keep letters (A-Z) and spaces
-    text = re.sub(r"[^A-Z\s]", "", text) 
+    text = re.sub(r"[^A-Z\s]", "", text)
     text = re.sub(r"\s+", " ", text)
-    return text.strip()
+    cleaned = text.strip()
+    logger.debug(f"👤 Cleaned name candidate: '{text}' → '{cleaned}'")
+    return cleaned
 
 # -------------------- ROTATION CORRECTION --------------------
 def detect_and_correct_rotation(img):
@@ -417,78 +421,103 @@ def detect_and_correct_rotation(img):
     try:
         osd = pytesseract.image_to_osd(gray)
         rotation = int(re.search(r"Rotate: (\d+)", osd).group(1))
+        logger.info(f"🧭 Detected image rotation: {rotation}°")
+
         if rotation == 90:
             img = cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
+            logger.info("🔄 Rotated image 90° counterclockwise")
         elif rotation == 180:
             img = cv2.rotate(img, cv2.ROTATE_180)
+            logger.info("🔄 Rotated image 180°")
         elif rotation == 270:
             img = cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
-    except Exception:
-        pass
+            logger.info("🔄 Rotated image 90° clockwise")
+        else:
+            logger.info("✅ No rotation needed")
+    except Exception as e:
+        logger.warning(f"⚠️ Rotation detection failed: {e}")
     return img
-
 
 # -------------------- IMAGE PREPROCESSING --------------------
 def preprocess_image(file_bytes: bytes):
+    logger.info("🖼️ Starting image preprocessing...")
     nparr = np.frombuffer(file_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
     if img is None:
+        logger.error("❌ Invalid image file")
         raise ValueError("Invalid image file")
 
-    img = detect_and_correct_rotation(img)
+    logger.info(f"✅ Image decoded successfully (shape={img.shape})")
 
-    # Resize and enhance
+    img = detect_and_correct_rotation(img)
     img = cv2.resize(img, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_LINEAR)
+    logger.info("🔍 Image resized and enhanced")
+
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    logger.info("🎨 Converted image to grayscale")
+
     denoised = cv2.fastNlMeansDenoising(gray, None, 30, 7, 21)
+    logger.info("🧼 Applied denoising filter")
 
     thresh = cv2.adaptiveThreshold(
         denoised, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
         cv2.THRESH_BINARY, 31, 2
     )
+    logger.info("⚙️ Applied adaptive thresholding")
 
     inverted = cv2.bitwise_not(thresh)
-    return Image.fromarray(inverted)
+    logger.info("🔁 Inverted image colors for OCR")
 
+    logger.info("✅ Image preprocessing completed successfully")
+    return Image.fromarray(inverted)
 
 # -------------------- NORMALIZE DATE --------------------
 def normalize_date_line(line: str):
-    line = line.replace("I", "/").replace("|", "/").replace(".", "/")
-    line = re.sub(r"\s+", "", line)
-    return line
-
+    normalized = line.replace("I", "/").replace("|", "/").replace(".", "/")
+    normalized = re.sub(r"\s+", "", normalized)
+    logger.debug(f"📅 Normalized date line: '{line}' → '{normalized}'")
+    return normalized
 
 # -------------------- MAIN EXTRACTION --------------------
 def extract_pan_details(file_bytes: bytes) -> Dict[str, Optional[str]]:
+    logger.info("🚀 Starting PAN details extraction...")
     pil_img = preprocess_image(file_bytes)
 
-    # Multiple OCR passes
-    ocr_configs = [
-        "--psm 6",
-        "--psm 4",
-        "--psm 3",
-        "--psm 11",
-    ]
+    ocr_configs = ["--psm 6", "--psm 4", "--psm 3", "--psm 11"]
     all_lines = []
 
+    # OCR multiple times with different configurations
     for config in ocr_configs:
-        text = pytesseract.image_to_string(pil_img, lang="eng", config=config)
-        lines = [clean_text(line) for line in text.split("\n") if line.strip()]
-        all_lines.extend(lines)
+        logger.info(f"🔎 Running Tesseract OCR with config: {config}")
+        try:
+            text = pytesseract.image_to_string(pil_img, lang="eng", config=config)
+            lines = [clean_text(line) for line in text.split("\n") if line.strip()]
+            logger.info(f"✅ Extracted {len(lines)} lines with config {config}")
+            all_lines.extend(lines)
+        except Exception as e:
+            logger.warning(f"⚠️ OCR failed for config {config}: {e}")
 
     lines = list(dict.fromkeys(all_lines))  # remove duplicates
+    logger.info(f"🧾 Total unique OCR lines: {len(lines)}")
+    logger.debug(f"📜 OCR Lines: {lines}")
 
     name, dob, pan = None, None, None
 
     # --- PAN NUMBER EXTRACTION ---
+    logger.info("🆔 Searching for PAN number pattern...")
     pan_pattern = re.compile(r"[A-Z]{5}[0-9]{4}[A-Z]")
     for line in lines:
         match = pan_pattern.search(line.replace(" ", ""))
         if match:
             pan = match.group()
+            logger.info(f"✅ PAN detected: {pan}")
             break
+    if not pan:
+        logger.warning("⚠️ PAN number not found in OCR text")
 
-    # --- DOB EXTRACTION (Original Logic) ---
+    # --- DOB EXTRACTION ---
+    logger.info("📅 Searching for Date of Birth...")
     dob_pattern = re.compile(r"(\d{2}[-/\.\s]?\d{2}[-/\.\s]?\d{4})")
     for i, line in enumerate(lines):
         if "DOB" in line or "DATE OF BIRTH" in line:
@@ -501,9 +530,11 @@ def extract_pan_details(file_bytes: bytes) -> Dict[str, Optional[str]]:
                     dob = f"{day.zfill(2)}/{month.zfill(2)}/{year}"
                 else:
                     dob = match.group()
+                logger.info(f"✅ DOB found: {dob}")
                 break
 
     if not dob:
+        logger.info("🔁 Secondary search for DOB in other lines...")
         for line in lines:
             match = dob_pattern.search(line)
             if match:
@@ -513,56 +544,61 @@ def extract_pan_details(file_bytes: bytes) -> Dict[str, Optional[str]]:
                     dob = f"{day.zfill(2)}/{month.zfill(2)}/{year}"
                 else:
                     dob = match.group()
+                logger.info(f"✅ DOB found (fallback): {dob}")
                 break
+    if not dob:
+        logger.warning("⚠️ DOB not found in OCR text")
 
-    # --- NAME EXTRACTION (IMPROVED) ---
+    # --- NAME EXTRACTION ---
+    logger.info("👤 Searching for Name patterns...")
     possible_names = []
 
     for idx, line in enumerate(lines):
-        # 1. Look for lines right after 'NAME'
+        # After "NAME"
         if "NAME" in line and "FATHER" not in line:
             for j in range(1, 3):
                 if idx + j < len(lines):
-                    # Use the stricter name cleaner
                     candidate = clean_name_candidate(lines[idx + j])
-                    # Heuristic: Name should have 2 to 4 words and be long enough
                     if 2 <= len(candidate.split()) <= 4 and len(candidate) > 5:
                         possible_names.append(candidate)
-                        
-        # 2. Look for lines right before 'FATHER' (Name is often just above Father's Name)
+                        logger.info(f"✅ Name candidate (after NAME): {candidate}")
+
+        # Before "FATHER"
         elif "FATHER" in line and idx > 0:
-            # Use the stricter name cleaner on the previous line
             prev_line = clean_name_candidate(lines[idx - 1])
-            # Heuristic: Name should have 2 to 4 words and be long enough
             if 2 <= len(prev_line.split()) <= 4 and len(prev_line) > 5:
                 possible_names.append(prev_line)
+                logger.info(f"✅ Name candidate (before FATHER): {prev_line}")
 
-
-    # 3. Fallback heuristic: choose longest clean name near DOB line
+    # Near DOB line (fallback)
     if not possible_names and dob:
+        logger.info("🔁 Fallback: searching near DOB line...")
         for i, line in enumerate(lines):
-            # Check for name two lines before the DOB line
             if dob in line and i >= 2:
-                prev_line = clean_name_candidate(lines[i - 2]) # Changed to two lines above
+                prev_line = clean_name_candidate(lines[i - 2])
                 if 2 <= len(prev_line.split()) <= 4 and len(prev_line) > 5:
                     possible_names.append(prev_line)
-                    break # Stop at the first potential name found near DOB
+                    logger.info(f"✅ Fallback name candidate near DOB: {prev_line}")
+                    break
 
-    # Pick the best name candidate: the longest one (most complete name)
+    # Pick best name
     if possible_names:
         best_candidate = max(possible_names, key=len)
         name_words = best_candidate.split()
-        
-        # Apply word count cap to truncate noise. Keep max of 4 words.
         if len(name_words) > 4:
-            best_candidate = " ".join(name_words[:4]) 
-        
+            best_candidate = " ".join(name_words[:4])
         name = best_candidate.title()
+        logger.info(f"🏷️ Final chosen name: {name}")
+    else:
+        logger.warning("⚠️ No valid name candidates found")
 
-
-    return {
+    result = {
         "Name": name if name else "Name not found",
         "Date of Birth": dob if dob else "DOB not found",
         "PAN": pan if pan else "PAN not found",
         "Raw OCR Lines": lines
     }
+
+    logger.info(f"📦 Extraction result: {result}")
+    logger.info("✅ PAN details extraction completed successfully")
+    return result
