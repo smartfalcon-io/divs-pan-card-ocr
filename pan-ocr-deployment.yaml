@@ -17,7 +17,7 @@ spec:
         - name: ecr-registry-secret
       containers:
         - name: pancard-ocr
-          image: 752749714540.dkr.ecr.ap-south-1.amazonaws.com/divs/pancard-ocr:v2.1.2
+          image: 752749714540.dkr.ecr.ap-south-1.amazonaws.com/divs/pancard-ocr:v5.1.2
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
@@ -28,8 +28,8 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "500m"
-          command: ["uvicorn"]
-          args: ["api.server:app", "--host", "0.0.0.0", "--port", "8000"]
+          # command: ["uvicorn"]
+          # args: ["api.server:app", "--host", "0.0.0.0", "--port", "8000"]
           env:
             - name: KAFKA_BROKER
               value: "kafka-divs-kafka-bootstrap.common.svc:9092"
